@@ -1,43 +1,101 @@
-import sys
-import keyboard
-import pyautogui as autogui
+import minescript as ms
+from minescript import EventQueue, EventType, KeyEvent
 import time
-import cv2
-import numpy as np
-from PIL import ImageGrab
+import sys
 
-screenWidth, screenHeight = autogui.size()
-mouseX, mouseY = autogui.position()
+# Key code for Left Alt (GLFW format, used by Minecraft)
+KEY_ALT = 342  # Left Alt key
 
-# Configuration
-CROUCH_KEY = 'ctrl' # Change this to shift if you use default controls
-PLACE_KEY = 'right'
+# Track Alt key state
+alt_pressed = False
+alt_held = False
 
-def exit_program():
-    sys.exit()
+# Wait for Alt key press to start using EventQueue
+with EventQueue() as q:
+    q.register_key_listener()
+    
+    print("Press Alt to start...")
+    while True:
+        try:
+            # Use timeout to make it non-blocking for checking
+            event = q.get(timeout=0.1)
+            if event.type == EventType.KEY and event.key == KEY_ALT:
+                if event.action == 1:  # Key pressed
+                    alt_pressed = True
+                    break
+        except:
+            # Timeout - continue waiting
+            pass
+        time.sleep(0.01)
 
-def detect_edge_of_block():
-    """
-    Detects if player is at the edge of a block.
-    This is a simplified version - you may need to adjust based on your setup.
-    """
-    # Screen pixel detection (look for void/air below)
-    # Capture a small region at the bottom center of screen
-    
-    # Convert to numpy array for processing
-    
-    # Look for dark colors (void) or specific patterns
-    
-    # If there are many dark pixels, might be at edge
+ms.player_press_sneak(True)
 
-def perform_bridge_action():
-    """Performs the bridging action: crouch, release, place block"""
+# Wait until not targeting up or down
+while ms.player_get_targeted_block().side in ("up", "down"):
+    time.sleep(0.001)
+
+# Get target block and calculate movement direction
+target = ms.player_get_targeted_block()
+side = target.side
+axis = 2 if side in ("north", "south") else 0
+delta = -1 if side in ("north", "west") else 1
+prev = ms.player_position()[axis]
+print("Started - Hold Alt to continue, release to stop")
+
+# Main loop - runs while Alt key is held
+with EventQueue() as q:
+    q.register_key_listener()
+    alt_held = True
     
-# Main loop
-time.sleep(5) # Gives me some time to open up Minecraft
-while True:
-    # Check for exit condition
-    if (keyboard.is_pressed('esc')):  # Press ESC to exit
-        exit_program()
-    
-    time.sleep(0.05)  # Small delay to prevent excessive CPU usage
+    while alt_held:
+        # Check for key events (non-blocking with timeout)
+        try:
+            event = q.get(timeout=0.01)
+            if event.type == EventType.KEY and event.key == KEY_ALT:
+                if event.action == 0:  # Key released
+                    alt_held = False
+                    break
+
+        except:
+            # Timeout - continue with main logic
+            pass
+        
+        x, y, z = ms.player_position()
+        curr = (x, y, z)[axis]
+        
+        if int(curr) == int(prev + delta):
+            ms.player_press_sneak(True)
+            while alt_held:
+                # Check for Alt release during inner loop
+                try:
+                    event = q.get(timeout=0.01)
+                    if event.type == EventType.KEY and event.key == KEY_ALT:
+                        if event.action == 0:  # Key released
+                            alt_held = False
+                            break
+                except:
+                    pass
+                
+                if not alt_held:
+                    break
+                    
+                time.sleep(0.01)
+                x2, y2, z2 = ms.player_position()
+                curr2 = (x2, y2, z2)[axis]
+                
+                if int(curr2) != int(prev + delta):
+                    break
+                
+                t = ms.player_get_targeted_block()
+                
+                if t and t.distance < 2 and t.side not in ("up", "down"):
+                    ms.player_press_use(True)
+                    ms.player_press_use(False)
+                    ms.player_press_sneak(False)
+                    break
+        
+        prev = curr
+        time.sleep(0.01)
+
+ms.player_press_sneak(False)
+print("Stopped")
